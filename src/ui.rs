@@ -25,6 +25,8 @@ pub struct AppState {
     pub world: World,
     pub camera_x: f32,
     pub camera_y: f32,
+    pub camera_vx: f32,
+    pub camera_vy: f32,
     pub zoom_tile_size: f32,
     pub active_tool: MouseTool,
     pub pending_route_bus: Option<u32>,
@@ -32,8 +34,13 @@ pub struct AppState {
     pub command_input: String,
     pub console_log: String,
     pub tutorial_idx: usize,
-    pub is_panning: bool,
     pub last_mouse: (f32, f32),
+    // Gestos Touch Mobile & Pinça (Multi-Touch):
+    pub pinch_prev_dist: Option<f32>,
+    pub pinch_prev_mid: Option<Vec2>,
+    pub touch_start_pos: Option<Vec2>,
+    pub touch_start_time: f64,
+    pub touch_has_dragged: bool,
     // Configurações Mobile & Economia de Bateria:
     pub battery_saver: bool,
     pub enable_safe_area: bool,
@@ -47,6 +54,8 @@ impl AppState {
             world: World::new(),
             camera_x: 0.0,
             camera_y: 0.0,
+            camera_vx: 0.0,
+            camera_vy: 0.0,
             zoom_tile_size: 64.0,
             active_tool: MouseTool::Build("byte_harvester"),
             pending_route_bus: None,
@@ -54,8 +63,12 @@ impl AppState {
             command_input: String::new(),
             console_log: "DICA: O carrinho anda estritamente na linha! Modo Touch & Mobile Ativo.".to_string(),
             tutorial_idx: 0,
-            is_panning: false,
             last_mouse: (0.0, 0.0),
+            pinch_prev_dist: None,
+            pinch_prev_mid: None,
+            touch_start_pos: None,
+            touch_start_time: 0.0,
+            touch_has_dragged: false,
             battery_saver: true,        // 30 FPS no mobile para economizar bateria
             enable_safe_area: true,     // Protege notch e barra de gestos
             active_mobile_tab: MobileTab::Build,
@@ -241,18 +254,18 @@ fn draw_mobile_header(app: &mut AppState, rect: Rect, scale: f32) {
 
     // Linha 2: Toggles Mobile
     let btn_h = 24.0 * scale;
-    let eco_label = if app.battery_saver { "🔋 30 FPS" } else { "⚡ 60 FPS" };
+    let eco_label = if app.battery_saver { "30 FPS" } else { "60 FPS" };
     let eco_col = if app.battery_saver { Color::new(0.3, 1.0, 0.5, 1.0) } else { Color::new(1.0, 0.8, 0.2, 1.0) };
     if draw_button(Rect::new(rect.x + 6.0 * scale, rect.y + 34.0 * scale, 96.0 * scale, btn_h), eco_label, eco_col, app.battery_saver, 12.0 * scale) {
         app.battery_saver = !app.battery_saver;
     }
 
-    let notch_label = if app.enable_safe_area { "📱 Notch: ON" } else { "📱 Notch: OFF" };
+    let notch_label = if app.enable_safe_area { "Notch: ON" } else { "Notch: OFF" };
     if draw_button(Rect::new(rect.x + 108.0 * scale, rect.y + 34.0 * scale, 108.0 * scale, btn_h), notch_label, Color::new(0.5, 0.8, 1.0, 1.0), app.enable_safe_area, 12.0 * scale) {
         app.enable_safe_area = !app.enable_safe_area;
     }
 
-    if draw_button(Rect::new(rect.x + rect.w - 86.0 * scale, rect.y + 34.0 * scale, 80.0 * scale, btn_h), "🎯 Base", Color::new(0.3, 0.9, 1.0, 1.0), false, 12.0 * scale) {
+    if draw_button(Rect::new(rect.x + rect.w - 86.0 * scale, rect.y + 34.0 * scale, 80.0 * scale, btn_h), "Base", Color::new(0.3, 0.9, 1.0, 1.0), false, 12.0 * scale) {
         app.camera_x = 0.0;
         app.camera_y = 0.0;
     }
@@ -268,10 +281,10 @@ fn draw_mobile_tabs_panel(app: &mut AppState, rect: Rect, scale: f32) {
     let tab_bar_h = 36.0 * scale;
     let tab_w = (rect.w - 12.0 * scale) / 4.0;
     let tabs = [
-        ("🔨 Obras", MobileTab::Build),
-        ("⚡ Upgrades", MobileTab::Upgrades),
-        ("📖 Academia", MobileTab::Academy),
-        ("💻 Console", MobileTab::Console),
+        ("Obras", MobileTab::Build),
+        ("Upgrades", MobileTab::Upgrades),
+        ("Academia", MobileTab::Academy),
+        ("Console", MobileTab::Console),
     ];
 
     for (i, (label, tab)) in tabs.iter().enumerate() {
@@ -301,15 +314,15 @@ fn draw_mobile_tabs_panel(app: &mut AppState, rect: Rect, scale: f32) {
 fn draw_mobile_build_tab(app: &mut AppState, rect: Rect, scale: f32) {
     let tools: &[(&str, MouseTool, Color)] = &[
         ("[1] Mineradora (25B)", MouseTool::Build("byte_harvester"), Color::new(0.0, 0.85, 1.0, 1.0)),
-        ("[2] Vagão Bus (20B)", MouseTool::Build("packet_bus"), Color::new(1.0, 0.85, 0.1, 1.0)),
+        ("[2] Vagao Bus (20B)", MouseTool::Build("packet_bus"), Color::new(1.0, 0.85, 0.1, 1.0)),
         ("[3] Torre Laser (35B)", MouseTool::Build("firewall_node"), Color::new(1.0, 0.35, 0.35, 1.0)),
         ("[4] Conversor (40B)", MouseTool::Build("transpiler"), Color::new(0.85, 0.35, 1.0, 1.0)),
         ("[5] Escavar (+5B)", MouseTool::Excavate, Color::new(0.6, 0.8, 0.6, 1.0)),
         ("[6] Ligar &mut", MouseTool::LinkRouteRaw, Color::new(0.2, 1.0, 0.5, 1.0)),
         ("[7] Ligar Mutex", MouseTool::LinkRouteMutex, Color::new(0.3, 0.9, 1.0, 1.0)),
         ("[8] Demolir (X)", MouseTool::Demolish, Color::new(1.0, 0.25, 0.25, 1.0)),
-        ("[🖐] Mover Mapa", MouseTool::PanCamera, Color::new(0.7, 0.85, 1.0, 1.0)),
-        ("[🎯] Base (0,0)", MouseTool::PanCamera, Color::new(0.3, 0.9, 1.0, 1.0)),
+        ("[Mover] Navegar", MouseTool::PanCamera, Color::new(0.7, 0.85, 1.0, 1.0)),
+        ("[Base] Centralizar", MouseTool::PanCamera, Color::new(0.3, 0.9, 1.0, 1.0)),
     ];
 
     let cols = 2;
@@ -459,54 +472,163 @@ fn draw_map_viewport(app: &mut AppState, rect: Rect, scale: f32) {
     draw_panel_box(rect, " MAPA DA FÁBRICA // NAVEGAÇÃO 2D ", Color::new(0.2, 0.65, 0.9, 1.0), 12.0 * scale);
 
     let (mx, my) = mouse_position();
+    let center_px_x = rect.x + rect.w * 0.5;
+    let center_px_y = rect.y + rect.h * 0.5;
+
+    // Botões Flutuantes de Zoom e Centralização no canto superior direito do mapa
+    let z_btn_w = 42.0 * scale;
+    let z_btn_h = 24.0 * scale;
+    let zoom_in_rect = Rect::new(rect.x + rect.w - z_btn_w - 6.0 * scale, rect.y + 4.0 * scale, z_btn_w, z_btn_h);
+    let zoom_out_rect = Rect::new(rect.x + rect.w - (z_btn_w * 2.0) - 10.0 * scale, rect.y + 4.0 * scale, z_btn_w, z_btn_h);
+    let reset_zoom_rect = Rect::new(rect.x + rect.w - (z_btn_w * 3.0) - 14.0 * scale, rect.y + 4.0 * scale, z_btn_w, z_btn_h);
+    let base_btn_rect = Rect::new(rect.x + rect.w - (z_btn_w * 4.0) - 18.0 * scale, rect.y + 4.0 * scale, z_btn_w, z_btn_h);
+
+    let active_touches = touches();
+    let mut touch_consumed = false;
+
+    // 1. PINÇA MULTI-TOUCH / PINCH-TO-ZOOM E 2-FINGER PAN
+    if active_touches.len() >= 2 {
+        touch_consumed = true;
+        let t0 = &active_touches[0];
+        let t1 = &active_touches[1];
+        let cur_dist = (t0.position - t1.position).length();
+        let cur_mid = (t0.position + t1.position) * 0.5;
+
+        if rect.contains(cur_mid) || rect.contains(t0.position) || rect.contains(t1.position) {
+            if let (Some(prev_dist), Some(prev_mid)) = (app.pinch_prev_dist, app.pinch_prev_mid) {
+                if prev_dist > 8.0 {
+                    let ratio = (cur_dist / prev_dist).clamp(0.6, 1.6);
+                    let old_zoom = app.zoom_tile_size;
+                    let min_zoom = 20.0 * scale;
+                    let max_zoom = 120.0 * scale;
+                    let new_zoom = (old_zoom * ratio).clamp(min_zoom, max_zoom);
+
+                    // Zoom centrado na posição exata dos dedos
+                    let world_x_mid = app.camera_x + (cur_mid.x - center_px_x) / old_zoom;
+                    let world_y_mid = app.camera_y + (cur_mid.y - center_px_y) / old_zoom;
+                    app.camera_x = world_x_mid - (cur_mid.x - center_px_x) / new_zoom;
+                    app.camera_y = world_y_mid - (cur_mid.y - center_px_y) / new_zoom;
+                    app.zoom_tile_size = new_zoom;
+
+                    // Deslocamento da câmera acompanhando os dois dedos
+                    let pan_dx = cur_mid.x - prev_mid.x;
+                    let pan_dy = cur_mid.y - prev_mid.y;
+                    app.camera_x -= pan_dx / new_zoom;
+                    app.camera_y -= pan_dy / new_zoom;
+                    app.camera_vx = -pan_dx / new_zoom;
+                    app.camera_vy = -pan_dy / new_zoom;
+                }
+            }
+            app.pinch_prev_dist = Some(cur_dist);
+            app.pinch_prev_mid = Some(cur_mid);
+            app.touch_has_dragged = true; // Impede qualquer clique acidental ao soltar os dedos
+            app.last_interaction_time = get_time();
+        }
+    } else {
+        app.pinch_prev_dist = None;
+        app.pinch_prev_mid = None;
+    }
+
+    // 2. ZOOM VIA MOUSE WHEEL (CENTRADÍSSIMO NO CURSOR PARA PC)
     let inside_map = rect.contains(vec2(mx, my));
-
-    // Botões de Zoom no canto do mapa (+ e - para mobile)
-    let z_btn_w = 34.0 * scale;
-    let z_btn_h = 28.0 * scale;
-    let zoom_in_rect = Rect::new(rect.x + rect.w - z_btn_w - 6.0 * scale, rect.y + 6.0 * scale, z_btn_w, z_btn_h);
-    let zoom_out_rect = Rect::new(rect.x + rect.w - (z_btn_w * 2.0) - 10.0 * scale, rect.y + 6.0 * scale, z_btn_w, z_btn_h);
-
-    if draw_button(zoom_in_rect, "+", Color::new(0.3, 0.9, 1.0, 1.0), false, 15.0 * scale) {
-        app.zoom_tile_size = (app.zoom_tile_size + 8.0 * scale).clamp(24.0 * scale, 90.0 * scale);
+    let (_, wheel_y) = mouse_wheel();
+    if inside_map && wheel_y != 0.0 && active_touches.is_empty() {
+        let old_zoom = app.zoom_tile_size;
+        let factor = if wheel_y > 0.0 { 1.15 } else { 0.87 };
+        let new_zoom = (old_zoom * factor).clamp(20.0 * scale, 120.0 * scale);
+        let world_x_mouse = app.camera_x + (mx - center_px_x) / old_zoom;
+        let world_y_mouse = app.camera_y + (my - center_px_y) / old_zoom;
+        app.camera_x = world_x_mouse - (mx - center_px_x) / new_zoom;
+        app.camera_y = world_y_mouse - (my - center_px_y) / new_zoom;
+        app.zoom_tile_size = new_zoom;
+        app.last_interaction_time = get_time();
     }
-    if draw_button(zoom_out_rect, "-", Color::new(0.3, 0.9, 1.0, 1.0), false, 15.0 * scale) {
-        app.zoom_tile_size = (app.zoom_tile_size - 8.0 * scale).clamp(24.0 * scale, 90.0 * scale);
-    }
 
-    if inside_map {
-        let (_, wheel_y) = mouse_wheel();
-        if wheel_y != 0.0 {
-            app.zoom_tile_size = (app.zoom_tile_size + wheel_y * 4.0 * scale).clamp(24.0 * scale, 90.0 * scale);
+    // 3. TOQUE ÚNICO / MOUSE: PAN SUAVE COM INÉRCIA VS TAP LIMPO
+    let pointer_pos = if let Some(t) = active_touches.first() {
+        t.position
+    } else {
+        vec2(mx, my)
+    };
+
+    let pointer_inside = rect.contains(pointer_pos);
+    let on_floating_btn = zoom_in_rect.contains(pointer_pos)
+        || zoom_out_rect.contains(pointer_pos)
+        || reset_zoom_rect.contains(pointer_pos)
+        || base_btn_rect.contains(pointer_pos);
+
+    let is_pressed = is_mouse_button_pressed(MouseButton::Left);
+    let is_down = is_mouse_button_down(MouseButton::Left);
+    let is_released = is_mouse_button_released(MouseButton::Left);
+    let is_secondary_pan = is_mouse_button_down(MouseButton::Right) || is_mouse_button_down(MouseButton::Middle);
+    let is_secondary_pan_pressed = is_mouse_button_pressed(MouseButton::Right) || is_mouse_button_pressed(MouseButton::Middle);
+
+    if pointer_inside && !on_floating_btn && !touch_consumed {
+        if is_pressed || is_secondary_pan_pressed {
+            app.touch_start_pos = Some(pointer_pos);
+            app.touch_start_time = get_time();
+            app.touch_has_dragged = false;
+            app.last_mouse = (pointer_pos.x, pointer_pos.y);
+            app.camera_vx = 0.0;
+            app.camera_vy = 0.0;
+            app.last_interaction_time = get_time();
         }
     }
 
-    if inside_map {
-        let is_pan_click = is_mouse_button_pressed(MouseButton::Right)
-            || is_mouse_button_pressed(MouseButton::Middle)
-            || (is_mouse_button_pressed(MouseButton::Left) && app.active_tool == MouseTool::PanCamera);
+    if (is_down || is_secondary_pan) && !touch_consumed {
+        if let Some(start_pos) = app.touch_start_pos {
+            let drag_dist = (pointer_pos - start_pos).length();
+            if drag_dist > 10.0 * scale {
+                app.touch_has_dragged = true;
+            }
 
-        if is_pan_click {
-            app.is_panning = true;
-            app.last_mouse = (mx, my);
+            let should_pan = is_secondary_pan
+                || app.active_tool == MouseTool::PanCamera
+                || (app.touch_has_dragged && app.active_tool != MouseTool::Excavate);
+
+            if should_pan {
+                let dx = pointer_pos.x - app.last_mouse.0;
+                let dy = pointer_pos.y - app.last_mouse.1;
+                app.camera_x -= dx / app.zoom_tile_size;
+                app.camera_y -= dy / app.zoom_tile_size;
+                app.camera_vx = app.camera_vx * 0.4 - (dx / app.zoom_tile_size) * 0.6;
+                app.camera_vy = app.camera_vy * 0.4 - (dy / app.zoom_tile_size) * 0.6;
+                app.last_mouse = (pointer_pos.x, pointer_pos.y);
+                app.last_interaction_time = get_time();
+            } else if app.active_tool == MouseTool::Excavate && app.touch_has_dragged {
+                let htx = (app.camera_x + (pointer_pos.x - center_px_x) / app.zoom_tile_size).round() as i32;
+                let hty = (app.camera_y + (pointer_pos.y - center_px_y) / app.zoom_tile_size).round() as i32;
+                if let Ok(msg) = app.world.excavate(htx, hty) {
+                    app.console_log = format!("Touch Defrag -> executou `defrag!({}, {});` ({})", htx, hty, msg);
+                }
+            }
         }
     }
 
-    if app.is_panning {
-        let is_pan_down = is_mouse_button_down(MouseButton::Right)
-            || is_mouse_button_down(MouseButton::Middle)
-            || (is_mouse_button_down(MouseButton::Left) && app.active_tool == MouseTool::PanCamera);
-
-        if is_pan_down {
-            let dx = mx - app.last_mouse.0;
-            let dy = my - app.last_mouse.1;
-            app.camera_x -= dx / app.zoom_tile_size;
-            app.camera_y -= dy / app.zoom_tile_size;
-            app.last_mouse = (mx, my);
-        } else {
-            app.is_panning = false;
+    let mut tap_executed = false;
+    if is_released && !touch_consumed {
+        if let Some(_start_pos) = app.touch_start_pos.take() {
+            let press_duration = get_time() - app.touch_start_time;
+            if !app.touch_has_dragged && press_duration < 0.45 && pointer_inside && !on_floating_btn {
+                tap_executed = true;
+            }
         }
     }
+
+    // 4. FÍSICA DE INÉRCIA / MOMENTUM (DESLIZE SUAVE NATIVO MOBILE)
+    if !is_down && !is_secondary_pan && active_touches.is_empty() {
+        if app.camera_vx.abs() > 0.0001 || app.camera_vy.abs() > 0.0001 {
+            app.camera_x += app.camera_vx;
+            app.camera_y += app.camera_vy;
+            app.camera_vx *= 0.90;
+            app.camera_vy *= 0.90;
+            if app.camera_vx.abs() < 0.001 { app.camera_vx = 0.0; }
+            if app.camera_vy.abs() < 0.001 { app.camera_vy = 0.0; }
+        }
+    }
+
+    app.camera_x = app.camera_x.clamp(-300.0, 300.0);
+    app.camera_y = app.camera_y.clamp(-300.0, 300.0);
 
     let ts = app.zoom_tile_size;
     let center_px_x = rect.x + rect.w * 0.5;
@@ -525,7 +647,7 @@ fn draw_map_viewport(app: &mut AppState, rect: Rect, scale: f32) {
 
             if px + ts < rect.x + 2.0
                 || px > rect.x + rect.w - 2.0
-                || py + ts < rect.y + 18.0 * scale
+                || py + ts < rect.y + 34.0 * scale
                 || py > rect.y + rect.h - 2.0
             {
                 continue;
@@ -692,12 +814,9 @@ fn draw_map_viewport(app: &mut AppState, rect: Rect, scale: f32) {
     }
 
     // 8. Interação de Toque / Mouse
-    if inside_map && app.active_tool != MouseTool::PanCamera {
+    if pointer_inside && !on_floating_btn && app.active_tool != MouseTool::PanCamera {
         let h_px = center_px_x + (hovered_tx as f32 - app.camera_x) * ts - ts * 0.5;
         let h_py = center_px_y + (hovered_ty as f32 - app.camera_y) * ts - ts * 0.5;
-
-        let is_click = is_mouse_button_pressed(MouseButton::Left);
-        let is_drag = is_mouse_button_down(MouseButton::Left);
 
         if app.active_tool == MouseTool::Demolish {
             draw_rectangle_lines(h_px, h_py, ts, ts, 2.5 * scale, Color::new(1.0, 0.2, 0.2, 0.9));
@@ -706,87 +825,89 @@ fn draw_map_viewport(app: &mut AppState, rect: Rect, scale: f32) {
             draw_rectangle_lines(h_px, h_py, ts, ts, 2.0 * scale, Color::new(1.0, 1.0, 1.0, 0.65));
         }
 
-        match app.active_tool {
-            MouseTool::Build(cat) if is_click || is_drag => {
-                if let Ok(id) = app.world.spawn_structure(cat, hovered_tx, hovered_ty) {
-                    app.console_log = format!(
-                        "Mouse Build -> executou `spawn!({}, {}, {});` (Criou #{})",
-                        cat, hovered_tx, hovered_ty, id
-                    );
-                }
-            }
-            MouseTool::Excavate if is_click || is_drag => {
-                if let Ok(msg) = app.world.excavate(hovered_tx, hovered_ty) {
-                    app.console_log = format!(
-                        "Mouse Defrag -> executou `defrag!({}, {});` ({})",
-                        hovered_tx, hovered_ty, msg
-                    );
-                }
-            }
-            MouseTool::Demolish if is_click || is_drag => {
-                if let Some(target_st) = app
-                    .world
-                    .structures
-                    .iter()
-                    .find(|s| s.x == hovered_tx && s.y == hovered_ty)
-                {
-                    let tid = target_st.id;
-                    if let Ok(msg) = app.world.demolish_structure(tid) {
-                        app.console_log = format!("Mouse Demolish -> executou `destroy!({});`: {}", tid, msg);
+        if tap_executed {
+            match app.active_tool {
+                MouseTool::Build(cat) => {
+                    if let Ok(id) = app.world.spawn_structure(cat, hovered_tx, hovered_ty) {
+                        app.console_log = format!(
+                            "Touch/Click Build -> executou `spawn!({}, {}, {});` (Criou #{})",
+                            cat, hovered_tx, hovered_ty, id
+                        );
                     }
                 }
-            }
-            MouseTool::LinkRouteRaw | MouseTool::LinkRouteMutex if is_click => {
-                let use_mutex = app.active_tool == MouseTool::LinkRouteMutex;
-                if let Some(clicked_st) = app
-                    .world
-                    .structures
-                    .iter()
-                    .find(|s| s.x == hovered_tx && s.y == hovered_ty)
-                {
-                    let clicked_id = clicked_st.id;
-
-                    if clicked_st.category_id == "packet_bus" && app.pending_route_bus.is_none() && app.pending_route_source.is_none() {
-                        app.pending_route_bus = Some(clicked_id);
-                        app.console_log = format!("Vagão #{} selecionado! Agora clique na Origem (ex: Mineradora).", clicked_id);
-                    } else if app.pending_route_source.is_none() {
-                        app.pending_route_source = Some(clicked_id);
-                        app.console_log = format!("Origem #{} selecionada! Agora clique no Destino (ex: Conversor/Base).", clicked_id);
-                    } else {
-                        let src_id = app.pending_route_source.unwrap();
-                        let dst_id = clicked_id;
-
-                        if src_id != dst_id {
-                            let bus_id_opt = app.pending_route_bus.or_else(|| {
-                                app.world.structures.iter().find(|s| s.category_id == "packet_bus" && s.route.is_none()).map(|s| s.id)
-                            });
-
-                            if let Some(bus_id) = bus_id_opt {
-                                let mut_flag = if use_mutex { "" } else { "mut " };
-                                let macro_name = if use_mutex { "route_mutex" } else { "route_borrow" };
-                                let cmd = format!("{}!({} => {}{}, {});", macro_name, bus_id, mut_flag, src_id, dst_id);
-
-                                match execute_rust_command(&mut app.world, &cmd) {
-                                    Ok(msg) => {
-                                        app.console_log = format!("Mouse Route -> executou: `{}` ({})", cmd, msg);
-                                    }
-                                    Err(err) => app.console_log = err,
-                                }
-                            } else {
-                                app.console_log = "ERRO: Nenhum Packet Bus disponível para vincular a esta rota!".to_string();
-                            }
+                MouseTool::Excavate => {
+                    if let Ok(msg) = app.world.excavate(hovered_tx, hovered_ty) {
+                        app.console_log = format!(
+                            "Touch/Click Defrag -> executou `defrag!({}, {});` ({})",
+                            hovered_tx, hovered_ty, msg
+                        );
+                    }
+                }
+                MouseTool::Demolish => {
+                    if let Some(target_st) = app
+                        .world
+                        .structures
+                        .iter()
+                        .find(|s| s.x == hovered_tx && s.y == hovered_ty)
+                    {
+                        let tid = target_st.id;
+                        if let Ok(msg) = app.world.demolish_structure(tid) {
+                            app.console_log = format!("Touch/Click Demolish -> executou `destroy!({});`: {}", tid, msg);
                         }
-                        app.pending_route_source = None;
-                        app.pending_route_bus = None;
                     }
                 }
+                MouseTool::LinkRouteRaw | MouseTool::LinkRouteMutex => {
+                    let use_mutex = app.active_tool == MouseTool::LinkRouteMutex;
+                    if let Some(clicked_st) = app
+                        .world
+                        .structures
+                        .iter()
+                        .find(|s| s.x == hovered_tx && s.y == hovered_ty)
+                    {
+                        let clicked_id = clicked_st.id;
+
+                        if clicked_st.category_id == "packet_bus" && app.pending_route_bus.is_none() && app.pending_route_source.is_none() {
+                            app.pending_route_bus = Some(clicked_id);
+                            app.console_log = format!("Vagão #{} selecionado! Agora toque na Origem (ex: Mineradora).", clicked_id);
+                        } else if app.pending_route_source.is_none() {
+                            app.pending_route_source = Some(clicked_id);
+                            app.console_log = format!("Origem #{} selecionada! Agora toque no Destino (ex: Conversor/Base).", clicked_id);
+                        } else {
+                            let src_id = app.pending_route_source.unwrap();
+                            let dst_id = clicked_id;
+
+                            if src_id != dst_id {
+                                let bus_id_opt = app.pending_route_bus.or_else(|| {
+                                    app.world.structures.iter().find(|s| s.category_id == "packet_bus" && s.route.is_none()).map(|s| s.id)
+                                });
+
+                                if let Some(bus_id) = bus_id_opt {
+                                    let mut_flag = if use_mutex { "" } else { "mut " };
+                                    let macro_name = if use_mutex { "route_mutex" } else { "route_borrow" };
+                                    let cmd = format!("{}!({} => {}{}, {});", macro_name, bus_id, mut_flag, src_id, dst_id);
+
+                                    match execute_rust_command(&mut app.world, &cmd) {
+                                        Ok(msg) => {
+                                            app.console_log = format!("Touch/Click Route -> executou: `{}` ({})", cmd, msg);
+                                        }
+                                        Err(err) => app.console_log = err,
+                                    }
+                                } else {
+                                    app.console_log = "ERRO: Nenhum Packet Bus disponível para vincular a esta rota!".to_string();
+                                }
+                            }
+                            app.pending_route_source = None;
+                            app.pending_route_bus = None;
+                        }
+                    }
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
 
     // 9. Tooltip Informativo
-    if inside_map {
+    if pointer_inside && !on_floating_btn {
         if let Some(st) = app.world.structures.iter().find(|s| s.x == hovered_tx && s.y == hovered_ty) {
             if let Some(bp) = app.world.blueprints.registry.get(&st.category_id) {
                 let inv_total: u32 = st.inventory.values().sum();
@@ -798,8 +919,8 @@ fn draw_map_viewport(app: &mut AppState, rect: Rect, scale: f32) {
 
                 let tip_w = (280.0 * scale).min(rect.w - 16.0);
                 let tip_h = 86.0 * scale;
-                let tx_box = (mx + 12.0).min(rect.x + rect.w - tip_w - 6.0);
-                let ty_box = (my + 12.0).min(rect.y + rect.h - tip_h - 6.0);
+                let tx_box = (pointer_pos.x + 12.0).min(rect.x + rect.w - tip_w - 6.0);
+                let ty_box = (pointer_pos.y + 12.0).min(rect.y + rect.h - tip_h - 6.0);
 
                 let tip_border = if app.active_tool == MouseTool::Demolish { RED } else { bp.color };
                 draw_rectangle(tx_box, ty_box, tip_w, tip_h, Color::new(0.03, 0.05, 0.09, 0.96));
@@ -814,6 +935,39 @@ fn draw_map_viewport(app: &mut AppState, rect: Rect, scale: f32) {
                 }
             }
         }
+    }
+
+    // 10. CONTROLES FLUTUANTES DA CÂMERA (DESENHADOS NO TOPO DE TUDO)
+    draw_rectangle(rect.x + 1.0, rect.y + 1.0, rect.w - 2.0, 32.0 * scale, Color::new(0.04, 0.06, 0.09, 0.94));
+    draw_line(rect.x, rect.y + 32.0 * scale, rect.x + rect.w, rect.y + 32.0 * scale, 1.0, Color::new(0.12, 0.22, 0.32, 1.0));
+
+    let zoom_pct = ((app.zoom_tile_size / (64.0 * scale)) * 100.0).round() as i32;
+    draw_text(
+        &format!("POS: (X:{:+3.0}, Y:{:+3.0}) | ZOOM: {}%", app.camera_x, app.camera_y, zoom_pct),
+        rect.x + 8.0 * scale,
+        rect.y + 20.0 * scale,
+        12.0 * scale,
+        Color::new(0.3, 0.9, 1.0, 0.95),
+    );
+
+    if draw_button(zoom_in_rect, "+", Color::new(0.3, 0.9, 1.0, 1.0), false, 15.0 * scale) {
+        app.zoom_tile_size = (app.zoom_tile_size * 1.22).clamp(20.0 * scale, 120.0 * scale);
+        app.last_interaction_time = get_time();
+    }
+    if draw_button(zoom_out_rect, "-", Color::new(0.3, 0.9, 1.0, 1.0), false, 15.0 * scale) {
+        app.zoom_tile_size = (app.zoom_tile_size * 0.82).clamp(20.0 * scale, 120.0 * scale);
+        app.last_interaction_time = get_time();
+    }
+    if draw_button(reset_zoom_rect, "1:1", Color::new(0.4, 0.85, 1.0, 1.0), false, 11.5 * scale) {
+        app.zoom_tile_size = 64.0 * scale;
+        app.last_interaction_time = get_time();
+    }
+    if draw_button(base_btn_rect, "Base", Color::new(0.3, 1.0, 0.6, 1.0), false, 11.5 * scale) {
+        app.camera_x = 0.0;
+        app.camera_y = 0.0;
+        app.camera_vx = 0.0;
+        app.camera_vy = 0.0;
+        app.last_interaction_time = get_time();
     }
 }
 
@@ -956,8 +1110,15 @@ fn draw_panel_box(rect: Rect, title: &str, border_color: Color, title_size: f32)
 
 fn draw_button(rect: Rect, text: &str, color: Color, active: bool, font_size: f32) -> bool {
     let (mx, my) = mouse_position();
-    let hovered = rect.contains(vec2(mx, my));
-    let clicked = hovered && is_mouse_button_pressed(MouseButton::Left);
+    let mouse_pos = vec2(mx, my);
+    let active_touches = touches();
+    let touch_pos = active_touches.first().map(|t| t.position);
+    let pos = touch_pos.unwrap_or(mouse_pos);
+    let hovered = rect.contains(pos);
+
+    let mouse_clicked = rect.contains(mouse_pos) && is_mouse_button_pressed(MouseButton::Left);
+    let touch_clicked = active_touches.iter().any(|t| (t.phase == TouchPhase::Started || t.phase == TouchPhase::Ended) && rect.contains(t.position));
+    let clicked = mouse_clicked || touch_clicked;
 
     let bg = if active {
         Color::new(color.r * 0.35, color.g * 0.35, color.b * 0.35, 0.95)
