@@ -47,17 +47,17 @@ impl AppState {
             world: World::new(),
             camera_x: 0.0,
             camera_y: 0.0,
-            zoom_tile_size: 44.0,
+            zoom_tile_size: 64.0,
             active_tool: MouseTool::Build("byte_harvester"),
             pending_route_bus: None,
             pending_route_source: None,
             command_input: String::new(),
-            console_log: "DICA: O carrinho anda estritamente na linha! Use [8] Demolir para apagar estruturas.".to_string(),
+            console_log: "DICA: O carrinho anda estritamente na linha! Modo Touch & Mobile Ativo.".to_string(),
             tutorial_idx: 0,
             is_panning: false,
             last_mouse: (0.0, 0.0),
-            battery_saver: true,        // Ativo por padrão: 30 FPS no mobile para economizar bateria
-            enable_safe_area: true,     // Ativo por padrão: protege notch e barra de gestos
+            battery_saver: true,        // 30 FPS no mobile para economizar bateria
+            enable_safe_area: true,     // Protege notch e barra de gestos
             active_mobile_tab: MobileTab::Build,
             last_interaction_time: 0.0,
         }
@@ -72,24 +72,31 @@ pub fn render_and_interact(app: &mut AppState) {
     // Fundo Geral Cyber-Terminal (#0A0E14)
     clear_background(Color::new(0.04, 0.055, 0.08, 1.0));
 
+    // Escala dinâmica DPI para celulares de alta resolução (Full HD, 2K, 3K)
+    let ui_scale = if is_portrait {
+        (sw / 440.0).clamp(1.0, 3.0)
+    } else {
+        (sh / 540.0).clamp(1.0, 2.2)
+    };
+
     // Margens de Área Segura (Notch no topo e barra de navegação/gestos no rodapé)
-    let safe_top = if app.enable_safe_area { 34.0 } else { 0.0 };
-    let safe_bottom = if app.enable_safe_area { 26.0 } else { 0.0 };
+    let safe_top = if app.enable_safe_area { 36.0 * ui_scale } else { 0.0 };
+    let safe_bottom = if app.enable_safe_area { 28.0 * ui_scale } else { 0.0 };
 
     if is_portrait {
-        render_portrait_layout(app, sw, sh, safe_top, safe_bottom);
+        render_portrait_layout(app, sw, sh, safe_top, safe_bottom, ui_scale);
     } else {
-        render_landscape_layout(app, sw, sh, safe_top, safe_bottom);
+        render_landscape_layout(app, sw, sh, safe_top, safe_bottom, ui_scale);
     }
 }
 
 // =========================================================================
 // LAYOUT HORIZONTAL (LANDSCAPE / DESKTOP / TABLET)
 // =========================================================================
-fn render_landscape_layout(app: &mut AppState, sw: f32, sh: f32, safe_top: f32, safe_bottom: f32) {
-    let top_bar_h = 84.0;
-    let bottom_repl_h = 88.0;
-    let right_panel_w = (sw * 0.35).clamp(360.0, 500.0);
+fn render_landscape_layout(app: &mut AppState, sw: f32, sh: f32, safe_top: f32, safe_bottom: f32, scale: f32) {
+    let top_bar_h = 84.0 * scale;
+    let bottom_repl_h = 88.0 * scale;
+    let right_panel_w = (sw * 0.35).clamp(360.0 * scale, 520.0 * scale);
 
     let top_rect = Rect::new(8.0, safe_top + 4.0, sw - 16.0, top_bar_h);
     let map_rect = Rect::new(
@@ -111,84 +118,66 @@ fn render_landscape_layout(app: &mut AppState, sw: f32, sh: f32, safe_top: f32, 
         bottom_repl_h,
     );
 
-    // 1. Renderiza Mapa 2D Interativo
-    draw_map_viewport(app, map_rect);
-
-    // 2. Barra Superior: Recursos + Botões de Ferramentas + Bateria
-    draw_top_toolbar(app, top_rect);
-
-    // 3. Painel Lateral Direito: Academia Rust + Inspetor
-    draw_right_education_panel(app, right_rect);
-
-    // 4. Terminal Simulado Inferior
-    draw_bottom_terminal(app, bottom_rect);
+    draw_map_viewport(app, map_rect, scale);
+    draw_top_toolbar(app, top_rect, scale);
+    draw_right_education_panel(app, right_rect, scale);
+    draw_bottom_terminal(app, bottom_rect, scale);
 }
 
 // =========================================================================
 // LAYOUT VERTICAL (PORTRAIT / SMARTPHONE)
 // =========================================================================
-fn render_portrait_layout(app: &mut AppState, sw: f32, sh: f32, safe_top: f32, safe_bottom: f32) {
-    let header_h = 68.0;
+fn render_portrait_layout(app: &mut AppState, sw: f32, sh: f32, safe_top: f32, safe_bottom: f32, scale: f32) {
+    let header_h = 66.0 * scale;
     let available_h = (sh - safe_top - safe_bottom - header_h - 16.0).max(100.0);
-    // Mapa ganha 50% da altura da tela vertical
-    let map_h = (available_h * 0.50).round();
+    // Mapa ganha 46% da altura útil
+    let map_h = (available_h * 0.46).round();
     let panel_h = available_h - map_h - 8.0;
 
     let header_rect = Rect::new(6.0, safe_top + 4.0, sw - 12.0, header_h);
-    let map_rect = Rect::new(6.0, safe_top + header_h + 8.0, sw - 12.0, map_h);
-    let panel_rect = Rect::new(6.0, safe_top + header_h + 8.0 + map_h + 6.0, sw - 12.0, panel_h);
+    let map_rect = Rect::new(6.0, safe_top + header_h + 6.0, sw - 12.0, map_h);
+    let panel_rect = Rect::new(6.0, safe_top + header_h + 6.0 + map_h + 6.0, sw - 12.0, panel_h);
 
-    // 1. Cabeçalho Superior Mobile com Safe Area
-    draw_mobile_header(app, header_rect);
-
-    // 2. Viewport do Mapa 2D no centro
-    draw_map_viewport(app, map_rect);
-
-    // 3. Painel de Abas Inferior (Ferramentas, Upgrades, Academia, Console)
-    draw_mobile_tabs_panel(app, panel_rect);
+    draw_mobile_header(app, header_rect, scale);
+    draw_map_viewport(app, map_rect, scale);
+    draw_mobile_tabs_panel(app, panel_rect, scale);
 }
 
 // =========================================================================
 // CABEÇALHO HORIZONTAL (LANDSCAPE)
 // =========================================================================
-fn draw_top_toolbar(app: &mut AppState, rect: Rect) {
-    draw_panel_box(
-        rect,
-        " CENTRAL DE CONTROLE // STRUCT::FORGE ",
-        Color::new(0.0, 0.8, 1.0, 1.0),
-    );
+fn draw_top_toolbar(app: &mut AppState, rect: Rect, scale: f32) {
+    draw_panel_box(rect, " CENTRAL DE CONTROLE // STRUCT::FORGE ", Color::new(0.0, 0.8, 1.0, 1.0), 13.0 * scale);
 
     let bytes = app.world.resources.get("raw_bytes").copied().unwrap_or(0);
     let shards = app.world.resources.get("crypto_shards").copied().unwrap_or(0);
     let bytecode = app.world.resources.get("bytecode").copied().unwrap_or(0);
 
-    // Linha 1: Recursos + Modos Rápidos de Energia e Notch
+    let f_size = 15.0 * scale;
     draw_text(
         &format!("RawBytes: {}  |  Shards: {}  |  Bytecode: {}", bytes, shards, bytecode),
-        rect.x + 12.0,
-        rect.y + 28.0,
-        17.0,
+        rect.x + 12.0 * scale,
+        rect.y + 26.0 * scale,
+        f_size,
         Color::new(0.9, 0.95, 1.0, 1.0),
     );
 
-    // Botões de Economia de Bateria e Safe Area no canto superior direito
     let eco_label = if app.battery_saver { "🔋 ECO: 30FPS" } else { "⚡ MAX: 60FPS" };
     let eco_col = if app.battery_saver { Color::new(0.3, 1.0, 0.5, 1.0) } else { Color::new(1.0, 0.8, 0.2, 1.0) };
-    let eco_rect = Rect::new(rect.x + rect.w - 230.0, rect.y + 8.0, 108.0, 24.0);
-    if draw_button(eco_rect, eco_label, eco_col, app.battery_saver) {
+    let eco_rect = Rect::new(rect.x + rect.w - 230.0 * scale, rect.y + 8.0 * scale, 108.0 * scale, 24.0 * scale);
+    if draw_button(eco_rect, eco_label, eco_col, app.battery_saver, 12.0 * scale) {
         app.battery_saver = !app.battery_saver;
     }
 
     let notch_label = if app.enable_safe_area { "📱 NOTCH: ON" } else { "📱 NOTCH: OFF" };
-    let notch_rect = Rect::new(rect.x + rect.w - 116.0, rect.y + 8.0, 108.0, 24.0);
-    if draw_button(notch_rect, notch_label, Color::new(0.5, 0.8, 1.0, 1.0), app.enable_safe_area) {
+    let notch_rect = Rect::new(rect.x + rect.w - 116.0 * scale, rect.y + 8.0 * scale, 108.0 * scale, 24.0 * scale);
+    if draw_button(notch_rect, notch_label, Color::new(0.5, 0.8, 1.0, 1.0), app.enable_safe_area, 12.0 * scale) {
         app.enable_safe_area = !app.enable_safe_area;
     }
 
-    // Linha 2: Ferramentas de Construção e Ações
-    let mut bx = rect.x + 8.0;
-    let by = rect.y + 40.0;
-    let bh = 34.0;
+    let mut bx = rect.x + 8.0 * scale;
+    let by = rect.y + 38.0 * scale;
+    let bh = 34.0 * scale;
 
     let tools: &[(&str, MouseTool, Color)] = &[
         ("[1] Mineradora (25B)", MouseTool::Build("byte_harvester"), Color::new(0.0, 0.85, 1.0, 1.0)),
@@ -203,25 +192,25 @@ fn draw_top_toolbar(app: &mut AppState, rect: Rect) {
     ];
 
     for (label, tool, col) in tools {
-        let bw = (label.len() as f32 * 7.2) + 12.0;
+        let bw = (label.len() as f32 * 7.2 * scale) + 12.0 * scale;
         let is_selected = app.active_tool == *tool;
-        if draw_button(Rect::new(bx, by, bw, bh), label, *col, is_selected) {
+        if draw_button(Rect::new(bx, by, bw, bh), label, *col, is_selected, 12.5 * scale) {
             app.active_tool = *tool;
             app.pending_route_bus = None;
             app.pending_route_source = None;
         }
-        bx += bw + 5.0;
+        bx += bw + 5.0 * scale;
     }
 
-    // Botão de Upgrade Global rápido
-    let upg_label = "★ Upgrade (10 Bytecode)";
-    let upg_w = 175.0;
+    let upg_label = "★ Upgrade (10 Code)";
+    let upg_w = 160.0 * scale;
     if rect.x + rect.w - upg_w - 6.0 > bx {
         if draw_button(
             Rect::new(rect.x + rect.w - upg_w - 6.0, by, upg_w, bh),
             upg_label,
             Color::new(1.0, 0.75, 0.1, 1.0),
             false,
+            12.5 * scale,
         ) {
             match app.world.upgrade_global_blueprint("packet_bus", None) {
                 Ok(msg) => app.console_log = format!("Mouse Action -> `impl packet_bus`: {}", msg),
@@ -234,8 +223,8 @@ fn draw_top_toolbar(app: &mut AppState, rect: Rect) {
 // =========================================================================
 // CABEÇALHO VERTICAL (PORTRAIT)
 // =========================================================================
-fn draw_mobile_header(app: &mut AppState, rect: Rect) {
-    draw_panel_box(rect, " STRUCT::FORGE // MOBILE HUD ", Color::new(0.0, 0.8, 1.0, 1.0));
+fn draw_mobile_header(app: &mut AppState, rect: Rect, scale: f32) {
+    draw_panel_box(rect, " STRUCT::FORGE // MOBILE HUD ", Color::new(0.0, 0.8, 1.0, 1.0), 12.0 * scale);
 
     let bytes = app.world.resources.get("raw_bytes").copied().unwrap_or(0);
     let shards = app.world.resources.get("crypto_shards").copied().unwrap_or(0);
@@ -244,26 +233,26 @@ fn draw_mobile_header(app: &mut AppState, rect: Rect) {
     // Linha 1: Recursos em destaque
     draw_text(
         &format!("Bytes: {} | Shards: {} | Code: {}", bytes, shards, bytecode),
-        rect.x + 8.0,
-        rect.y + 28.0,
-        16.0,
+        rect.x + 8.0 * scale,
+        rect.y + 26.0 * scale,
+        15.0 * scale,
         Color::new(0.9, 0.95, 1.0, 1.0),
     );
 
     // Linha 2: Toggles Mobile
+    let btn_h = 24.0 * scale;
     let eco_label = if app.battery_saver { "🔋 30 FPS" } else { "⚡ 60 FPS" };
     let eco_col = if app.battery_saver { Color::new(0.3, 1.0, 0.5, 1.0) } else { Color::new(1.0, 0.8, 0.2, 1.0) };
-    if draw_button(Rect::new(rect.x + 6.0, rect.y + 36.0, 92.0, 24.0), eco_label, eco_col, app.battery_saver) {
+    if draw_button(Rect::new(rect.x + 6.0 * scale, rect.y + 34.0 * scale, 96.0 * scale, btn_h), eco_label, eco_col, app.battery_saver, 12.0 * scale) {
         app.battery_saver = !app.battery_saver;
     }
 
     let notch_label = if app.enable_safe_area { "📱 Notch: ON" } else { "📱 Notch: OFF" };
-    if draw_button(Rect::new(rect.x + 104.0, rect.y + 36.0, 102.0, 24.0), notch_label, Color::new(0.5, 0.8, 1.0, 1.0), app.enable_safe_area) {
+    if draw_button(Rect::new(rect.x + 108.0 * scale, rect.y + 34.0 * scale, 108.0 * scale, btn_h), notch_label, Color::new(0.5, 0.8, 1.0, 1.0), app.enable_safe_area, 12.0 * scale) {
         app.enable_safe_area = !app.enable_safe_area;
     }
 
-    // Botão Centralizar Base
-    if draw_button(Rect::new(rect.x + rect.w - 86.0, rect.y + 36.0, 80.0, 24.0), "🎯 Base", Color::new(0.3, 0.9, 1.0, 1.0), false) {
+    if draw_button(Rect::new(rect.x + rect.w - 86.0 * scale, rect.y + 34.0 * scale, 80.0 * scale, btn_h), "🎯 Base", Color::new(0.3, 0.9, 1.0, 1.0), false, 12.0 * scale) {
         app.camera_x = 0.0;
         app.camera_y = 0.0;
     }
@@ -272,12 +261,12 @@ fn draw_mobile_header(app: &mut AppState, rect: Rect) {
 // =========================================================================
 // PAINEL DE ABAS INFERIOR (PORTRAIT MOBILE)
 // =========================================================================
-fn draw_mobile_tabs_panel(app: &mut AppState, rect: Rect) {
-    draw_panel_box(rect, "", Color::new(0.2, 0.6, 0.9, 1.0));
+fn draw_mobile_tabs_panel(app: &mut AppState, rect: Rect, scale: f32) {
+    draw_panel_box(rect, "", Color::new(0.2, 0.6, 0.9, 1.0), 12.0 * scale);
 
     // Barra de Navegação das 4 Abas
-    let tab_bar_h = 36.0;
-    let tab_w = (rect.w - 12.0) / 4.0;
+    let tab_bar_h = 36.0 * scale;
+    let tab_w = (rect.w - 12.0 * scale) / 4.0;
     let tabs = [
         ("🔨 Obras", MobileTab::Build),
         ("⚡ Upgrades", MobileTab::Upgrades),
@@ -287,24 +276,29 @@ fn draw_mobile_tabs_panel(app: &mut AppState, rect: Rect) {
 
     for (i, (label, tab)) in tabs.iter().enumerate() {
         let is_active = app.active_mobile_tab == *tab;
-        let tab_rect = Rect::new(rect.x + 6.0 + i as f32 * tab_w, rect.y + 4.0, tab_w - 3.0, tab_bar_h);
+        let tab_rect = Rect::new(rect.x + 6.0 * scale + i as f32 * tab_w, rect.y + 4.0 * scale, tab_w - 3.0 * scale, tab_bar_h);
         let tab_col = if is_active { Color::new(0.0, 0.9, 1.0, 1.0) } else { Color::new(0.5, 0.6, 0.7, 1.0) };
-        if draw_button(tab_rect, label, tab_col, is_active) {
+        if draw_button(tab_rect, label, tab_col, is_active, 13.0 * scale) {
             app.active_mobile_tab = *tab;
         }
     }
 
-    let content_rect = Rect::new(rect.x + 6.0, rect.y + tab_bar_h + 8.0, rect.w - 12.0, rect.h - tab_bar_h - 12.0);
+    let content_rect = Rect::new(
+        rect.x + 6.0 * scale,
+        rect.y + tab_bar_h + 8.0 * scale,
+        rect.w - 12.0 * scale,
+        rect.h - tab_bar_h - 12.0 * scale,
+    );
 
     match app.active_mobile_tab {
-        MobileTab::Build => draw_mobile_build_tab(app, content_rect),
-        MobileTab::Upgrades => draw_mobile_upgrades_tab(app, content_rect),
-        MobileTab::Academy => draw_mobile_academy_tab(app, content_rect),
-        MobileTab::Console => draw_mobile_console_tab(app, content_rect),
+        MobileTab::Build => draw_mobile_build_tab(app, content_rect, scale),
+        MobileTab::Upgrades => draw_mobile_upgrades_tab(app, content_rect, scale),
+        MobileTab::Academy => draw_mobile_academy_tab(app, content_rect, scale),
+        MobileTab::Console => draw_mobile_console_tab(app, content_rect, scale),
     }
 }
 
-fn draw_mobile_build_tab(app: &mut AppState, rect: Rect) {
+fn draw_mobile_build_tab(app: &mut AppState, rect: Rect, scale: f32) {
     let tools: &[(&str, MouseTool, Color)] = &[
         ("[1] Mineradora (25B)", MouseTool::Build("byte_harvester"), Color::new(0.0, 0.85, 1.0, 1.0)),
         ("[2] Vagão Bus (20B)", MouseTool::Build("packet_bus"), Color::new(1.0, 0.85, 0.1, 1.0)),
@@ -315,32 +309,39 @@ fn draw_mobile_build_tab(app: &mut AppState, rect: Rect) {
         ("[7] Ligar Mutex", MouseTool::LinkRouteMutex, Color::new(0.3, 0.9, 1.0, 1.0)),
         ("[8] Demolir (X)", MouseTool::Demolish, Color::new(1.0, 0.25, 0.25, 1.0)),
         ("[🖐] Mover Mapa", MouseTool::PanCamera, Color::new(0.7, 0.85, 1.0, 1.0)),
+        ("[🎯] Base (0,0)", MouseTool::PanCamera, Color::new(0.3, 0.9, 1.0, 1.0)),
     ];
 
     let cols = 2;
-    let btn_w = (rect.w - 8.0) / cols as f32;
-    let btn_h = 36.0;
+    let btn_w = (rect.w - 8.0 * scale) / cols as f32;
+    // Otimização ergonômica: botões expandem para ocupar o espaço disponível vertical
+    let btn_h = ((rect.h - 32.0 * scale) / 5.2).clamp(38.0 * scale, 75.0 * scale);
 
     for (idx, (label, tool, col)) in tools.iter().enumerate() {
         let r = idx / cols;
         let c = idx % cols;
         let bx = rect.x + c as f32 * btn_w;
-        let by = rect.y + r as f32 * (btn_h + 5.0);
+        let by = rect.y + r as f32 * (btn_h + 6.0 * scale);
 
         if by + btn_h > rect.y + rect.h {
             break;
         }
 
-        let is_selected = app.active_tool == *tool;
-        if draw_button(Rect::new(bx, by, btn_w - 4.0, btn_h), label, *col, is_selected) {
-            app.active_tool = *tool;
-            app.pending_route_bus = None;
-            app.pending_route_source = None;
+        let is_selected = app.active_tool == *tool && idx != 9;
+        if draw_button(Rect::new(bx, by, btn_w - 4.0 * scale, btn_h), label, *col, is_selected, 13.5 * scale) {
+            if idx == 9 {
+                app.camera_x = 0.0;
+                app.camera_y = 0.0;
+            } else {
+                app.active_tool = *tool;
+                app.pending_route_bus = None;
+                app.pending_route_source = None;
+            }
         }
     }
 }
 
-fn draw_mobile_upgrades_tab(app: &mut AppState, rect: Rect) {
+fn draw_mobile_upgrades_tab(app: &mut AppState, rect: Rect, scale: f32) {
     let cats = [
         ("packet_bus", "Vagão Packet Bus", "Velocidade + Capacidade"),
         ("byte_harvester", "Mineradora de Dados", "Taxa de Extração de Bytes"),
@@ -348,9 +349,9 @@ fn draw_mobile_upgrades_tab(app: &mut AppState, rect: Rect) {
         ("transpiler", "Transpilador de Código", "Eficiência e Conversão"),
     ];
 
-    let card_h = 42.0;
+    let card_h = ((rect.h - 30.0 * scale) / 4.2).clamp(42.0 * scale, 80.0 * scale);
     for (i, (cat, name, desc)) in cats.iter().enumerate() {
-        let cy = rect.y + i as f32 * (card_h + 6.0);
+        let cy = rect.y + i as f32 * (card_h + 8.0 * scale);
         if cy + card_h > rect.y + rect.h {
             break;
         }
@@ -360,13 +361,15 @@ fn draw_mobile_upgrades_tab(app: &mut AppState, rect: Rect) {
         let col = bp.map_or(WHITE, |b| b.color);
 
         draw_rectangle(rect.x, cy, rect.w, card_h, Color::new(0.06, 0.08, 0.12, 0.9));
-        draw_rectangle_lines(rect.x, cy, rect.w, card_h, 1.0, col);
+        draw_rectangle_lines(rect.x, cy, rect.w, card_h, 1.2, col);
 
-        draw_text(name, rect.x + 8.0, cy + 18.0, 15.0, col);
-        draw_text(&format!("Tier: {} | {}", tier_name, desc), rect.x + 8.0, cy + 34.0, 13.0, LIGHTGRAY);
+        draw_text(name, rect.x + 8.0 * scale, cy + card_h * 0.42, 14.5 * scale, col);
+        draw_text(&format!("Tier: {} | {}", tier_name, desc), rect.x + 8.0 * scale, cy + card_h * 0.78, 12.0 * scale, LIGHTGRAY);
 
-        let upg_btn = Rect::new(rect.x + rect.w - 110.0, cy + 6.0, 102.0, 30.0);
-        if draw_button(upg_btn, "impl (10 Code)", Color::new(1.0, 0.8, 0.2, 1.0), false) {
+        let upg_w = 120.0 * scale;
+        let upg_h = card_h * 0.65;
+        let upg_btn = Rect::new(rect.x + rect.w - upg_w - 6.0 * scale, cy + (card_h - upg_h) * 0.5, upg_w, upg_h);
+        if draw_button(upg_btn, "impl (10 Code)", Color::new(1.0, 0.8, 0.2, 1.0), false, 12.5 * scale) {
             match app.world.upgrade_global_blueprint(cat, None) {
                 Ok(msg) => app.console_log = format!("impl {}: {}", cat, msg),
                 Err(err) => app.console_log = err,
@@ -375,27 +378,29 @@ fn draw_mobile_upgrades_tab(app: &mut AppState, rect: Rect) {
     }
 }
 
-fn draw_mobile_academy_tab(app: &mut AppState, rect: Rect) {
+fn draw_mobile_academy_tab(app: &mut AppState, rect: Rect, scale: f32) {
     let step = &TUTORIAL_STEPS[app.tutorial_idx % TUTORIAL_STEPS.len()];
-    let mut y = rect.y + 16.0;
+    let mut y = rect.y + 18.0 * scale;
 
-    // Título e Botão Próximo
-    draw_text(step.title, rect.x + 6.0, y, 16.0, Color::new(0.2, 0.95, 1.0, 1.0));
-    let next_btn = Rect::new(rect.x + rect.w - 100.0, rect.y, 94.0, 26.0);
-    if draw_button(next_btn, "Próxima ▶", Color::new(0.2, 0.85, 1.0, 1.0), false) {
+    draw_text(step.title, rect.x + 6.0 * scale, y, 16.0 * scale, Color::new(0.2, 0.95, 1.0, 1.0));
+    let next_btn = Rect::new(rect.x + rect.w - 110.0 * scale, rect.y, 104.0 * scale, 28.0 * scale);
+    if draw_button(next_btn, "Próxima ▶", Color::new(0.2, 0.85, 1.0, 1.0), false, 12.5 * scale) {
         app.tutorial_idx = (app.tutorial_idx + 1) % TUTORIAL_STEPS.len();
     }
-    y += 20.0;
+    y += 24.0 * scale;
 
-    // Significado no Rust
-    draw_text("• CONCEITO EM RUST REAL:", rect.x + 6.0, y, 13.0, Color::new(1.0, 0.85, 0.2, 1.0));
-    y += 15.0;
-    y = draw_wrapped_text(step.real_rust_meaning, rect.x + 8.0, y, rect.w - 16.0, 13.0, WHITE);
-    y += 8.0;
+    draw_text("• CONCEITO EM RUST REAL:", rect.x + 6.0 * scale, y, 13.0 * scale, Color::new(1.0, 0.85, 0.2, 1.0));
+    y += 18.0 * scale;
+    y = draw_wrapped_text(step.real_rust_meaning, rect.x + 8.0 * scale, y, rect.w - 16.0 * scale, 13.0 * scale, WHITE);
+    y += 10.0 * scale;
 
-    // Botão Executar Exemplo Direto
-    let exec_btn = Rect::new(rect.x + 6.0, (rect.y + rect.h - 36.0).max(y + 4.0), rect.w - 12.0, 32.0);
-    if draw_button(exec_btn, &format!("▶ Rodar: {}", step.example_cmd), Color::new(0.2, 1.0, 0.5, 1.0), false) {
+    let exec_btn = Rect::new(
+        rect.x + 6.0 * scale,
+        (rect.y + rect.h - 40.0 * scale).max(y + 6.0 * scale),
+        rect.w - 12.0 * scale,
+        34.0 * scale,
+    );
+    if draw_button(exec_btn, &format!("▶ Rodar: {}", step.example_cmd), Color::new(0.2, 1.0, 0.5, 1.0), false, 13.5 * scale) {
         match execute_rust_command(&mut app.world, step.example_cmd) {
             Ok(msg) => app.console_log = msg,
             Err(err) => app.console_log = err,
@@ -403,28 +408,28 @@ fn draw_mobile_academy_tab(app: &mut AppState, rect: Rect) {
     }
 }
 
-fn draw_mobile_console_tab(app: &mut AppState, rect: Rect) {
+fn draw_mobile_console_tab(app: &mut AppState, rect: Rect, scale: f32) {
     draw_text(
         &format!("borrow_checker> {}", app.world.last_borrow_event),
-        rect.x + 6.0,
-        rect.y + 18.0,
-        14.0,
+        rect.x + 6.0 * scale,
+        rect.y + 18.0 * scale,
+        13.5 * scale,
         Color::new(0.4, 0.9, 1.0, 1.0),
     );
 
     draw_text(
         &format!("output: {}", app.console_log),
-        rect.x + 6.0,
-        rect.y + 38.0,
-        14.0,
+        rect.x + 6.0 * scale,
+        rect.y + 38.0 * scale,
+        13.5 * scale,
         Color::new(1.0, 0.85, 0.2, 1.0),
     );
 
-    let mut cy = rect.y + 60.0;
-    draw_text("UNIDADES EM CAMPO:", rect.x + 6.0, cy, 14.0, Color::new(0.7, 0.4, 1.0, 1.0));
-    cy += 18.0;
+    let mut cy = rect.y + 64.0 * scale;
+    draw_text("UNIDADES EM CAMPO:", rect.x + 6.0 * scale, cy, 14.0 * scale, Color::new(0.7, 0.4, 1.0, 1.0));
+    cy += 20.0 * scale;
 
-    for st in app.world.structures.iter().take(5) {
+    for st in app.world.structures.iter().take(6) {
         let inv: u32 = st.inventory.values().sum();
         let status = if let Some(r) = &st.route {
             if matches!(r.phase, RoutePhase::BorrowPanic(_)) {
@@ -438,48 +443,44 @@ fn draw_mobile_console_tab(app: &mut AppState, rect: Rect) {
 
         draw_text(
             &format!("#{:<2} {:<12} | Carga: {} | {}", st.id, st.category_id, inv, status),
-            rect.x + 6.0,
+            rect.x + 6.0 * scale,
             cy,
-            13.0,
+            12.5 * scale,
             WHITE,
         );
-        cy += 18.0;
+        cy += 18.0 * scale;
     }
 }
 
 // =========================================================================
 // VIEWPORT DO MAPA (SUPORTA TOUCH DRAG, PANNING E ZOOM)
 // =========================================================================
-fn draw_map_viewport(app: &mut AppState, rect: Rect) {
-    draw_panel_box(
-        rect,
-        " MAPA DA FÁBRICA // NAVEGAÇÃO 2D ",
-        Color::new(0.2, 0.65, 0.9, 1.0),
-    );
+fn draw_map_viewport(app: &mut AppState, rect: Rect, scale: f32) {
+    draw_panel_box(rect, " MAPA DA FÁBRICA // NAVEGAÇÃO 2D ", Color::new(0.2, 0.65, 0.9, 1.0), 12.0 * scale);
 
     let (mx, my) = mouse_position();
     let inside_map = rect.contains(vec2(mx, my));
 
     // Botões de Zoom no canto do mapa (+ e - para mobile)
-    let zoom_in_rect = Rect::new(rect.x + rect.w - 38.0, rect.y + 6.0, 32.0, 26.0);
-    let zoom_out_rect = Rect::new(rect.x + rect.w - 74.0, rect.y + 6.0, 32.0, 26.0);
+    let z_btn_w = 34.0 * scale;
+    let z_btn_h = 28.0 * scale;
+    let zoom_in_rect = Rect::new(rect.x + rect.w - z_btn_w - 6.0 * scale, rect.y + 6.0 * scale, z_btn_w, z_btn_h);
+    let zoom_out_rect = Rect::new(rect.x + rect.w - (z_btn_w * 2.0) - 10.0 * scale, rect.y + 6.0 * scale, z_btn_w, z_btn_h);
 
-    if draw_button(zoom_in_rect, "+", Color::new(0.3, 0.9, 1.0, 1.0), false) {
-        app.zoom_tile_size = (app.zoom_tile_size + 6.0).clamp(24.0, 72.0);
+    if draw_button(zoom_in_rect, "+", Color::new(0.3, 0.9, 1.0, 1.0), false, 15.0 * scale) {
+        app.zoom_tile_size = (app.zoom_tile_size + 8.0 * scale).clamp(24.0 * scale, 90.0 * scale);
     }
-    if draw_button(zoom_out_rect, "-", Color::new(0.3, 0.9, 1.0, 1.0), false) {
-        app.zoom_tile_size = (app.zoom_tile_size - 6.0).clamp(24.0, 72.0);
+    if draw_button(zoom_out_rect, "-", Color::new(0.3, 0.9, 1.0, 1.0), false, 15.0 * scale) {
+        app.zoom_tile_size = (app.zoom_tile_size - 8.0 * scale).clamp(24.0 * scale, 90.0 * scale);
     }
 
-    // Zoom com Scroll do Mouse (quando disponível)
     if inside_map {
         let (_, wheel_y) = mouse_wheel();
         if wheel_y != 0.0 {
-            app.zoom_tile_size = (app.zoom_tile_size + wheel_y * 4.0).clamp(24.0, 72.0);
+            app.zoom_tile_size = (app.zoom_tile_size + wheel_y * 4.0 * scale).clamp(24.0 * scale, 90.0 * scale);
         }
     }
 
-    // Panning da Câmera (Com ferramenta Pan, Botão Direito, Botão do Meio ou Touch Drag)
     if inside_map {
         let is_pan_click = is_mouse_button_pressed(MouseButton::Right)
             || is_mouse_button_pressed(MouseButton::Middle)
@@ -524,7 +525,7 @@ fn draw_map_viewport(app: &mut AppState, rect: Rect) {
 
             if px + ts < rect.x + 2.0
                 || px > rect.x + rect.w - 2.0
-                || py + ts < rect.y + 18.0
+                || py + ts < rect.y + 18.0 * scale
                 || py > rect.y + rect.h - 2.0
             {
                 continue;
@@ -564,14 +565,14 @@ fn draw_map_viewport(app: &mut AppState, rect: Rect) {
                     let x2 = center_px_x + (p2.0 as f32 - app.camera_x) * ts;
                     let y2 = center_px_y + (p2.1 as f32 - app.camera_y) * ts;
 
-                    draw_line(x1, y1, x2, y2, 4.5, Color::new(line_col.r, line_col.g, line_col.b, 0.22));
-                    draw_line(x1, y1, x2, y2, 2.2, line_col);
-                    draw_circle(x1, y1, 2.5, line_col);
+                    draw_line(x1, y1, x2, y2, 4.5 * scale, Color::new(line_col.r, line_col.g, line_col.b, 0.22));
+                    draw_line(x1, y1, x2, y2, 2.2 * scale, line_col);
+                    draw_circle(x1, y1, 2.5 * scale, line_col);
                 }
                 if let Some(last) = route.path.last() {
                     let lx = center_px_x + (last.0 as f32 - app.camera_x) * ts;
                     let ly = center_px_y + (last.1 as f32 - app.camera_y) * ts;
-                    draw_circle(lx, ly, 2.5, line_col);
+                    draw_circle(lx, ly, 2.5 * scale, line_col);
                 }
             }
         }
@@ -590,7 +591,7 @@ fn draw_map_viewport(app: &mut AppState, rect: Rect) {
                     let y1 = center_px_y + (window[0].1 as f32 - app.camera_y) * ts;
                     let x2 = center_px_x + (window[1].0 as f32 - app.camera_x) * ts;
                     let y2 = center_px_y + (window[1].1 as f32 - app.camera_y) * ts;
-                    draw_line(x1, y1, x2, y2, 2.5, Color::new(1.0, 0.9, 0.2, 0.75));
+                    draw_line(x1, y1, x2, y2, 2.5 * scale, Color::new(1.0, 0.9, 0.2, 0.75));
                 }
             }
         }
@@ -603,10 +604,10 @@ fn draw_map_viewport(app: &mut AppState, rect: Rect) {
         let alpha = 1.0 - (pulse.radius / pulse.max_radius).clamp(0.0, 1.0);
         let mut c = pulse.color;
         c.a = alpha;
-        draw_circle_lines(px, py, pulse.radius * ts, 2.0, c);
+        draw_circle_lines(px, py, pulse.radius * ts, 2.0 * scale, c);
     }
 
-    // 5. Estruturas & Vagões (Vagões deslizam rigorosamente SOBRE a linha)
+    // 5. Estruturas & Vagões
     for st in &app.world.structures {
         let cx = center_px_x + (st.render_x - app.camera_x) * ts;
         let cy = center_px_y + (st.render_y - app.camera_y) * ts;
@@ -632,14 +633,14 @@ fn draw_map_viewport(app: &mut AppState, rect: Rect) {
 
             match active_tier {
                 GeometryTier::Basic => {
-                    draw_rectangle_lines(cx - radius, cy - radius, radius * 2.0, radius * 2.0, 2.5, border_col);
+                    draw_rectangle_lines(cx - radius, cy - radius, radius * 2.0, radius * 2.0, 2.5 * scale, border_col);
                 }
                 GeometryTier::Angular => {
-                    draw_poly_lines(cx, cy, 4, radius * 1.1, 45.0, 3.0, border_col);
+                    draw_poly_lines(cx, cy, 4, radius * 1.1, 45.0, 3.0 * scale, border_col);
                 }
                 GeometryTier::HexCore => {
-                    draw_poly_lines(cx, cy, 6, radius * 1.12, 0.0, 3.0, border_col);
-                    draw_poly_lines(cx, cy, 6, radius * 0.85, 30.0, 1.5, Color::new(1.0, 0.9, 0.3, 0.9));
+                    draw_poly_lines(cx, cy, 6, radius * 1.12, 0.0, 3.0 * scale, border_col);
+                    draw_poly_lines(cx, cy, 6, radius * 0.85, 30.0, 1.5 * scale, Color::new(1.0, 0.9, 0.3, 0.9));
                 }
             }
 
@@ -650,13 +651,13 @@ fn draw_map_viewport(app: &mut AppState, rect: Rect) {
             } else {
                 bp.ascii_symbol
             };
-            draw_text(label, cx - radius * 0.65, cy + 5.0, ts * 0.36, border_col);
+            draw_text(label, cx - radius * 0.65, cy + 5.0 * scale, ts * 0.36, border_col);
 
             draw_text(
                 &format!("#{}", st.id),
                 cx - radius + 2.0,
-                cy - radius + 11.0,
-                14.0,
+                cy - radius + 11.0 * scale,
+                13.0 * scale,
                 Color::new(0.9, 0.95, 1.0, 0.9),
             );
 
@@ -664,8 +665,8 @@ fn draw_map_viewport(app: &mut AppState, rect: Rect) {
             let cap = bp.effective_capacity(st.custom_tier_override).max(1);
             let ratio = (inv_sum as f32 / cap as f32).clamp(0.0, 1.0);
             let bar_w = radius * 1.6;
-            draw_rectangle(cx - bar_w * 0.5, cy + radius - 5.0, bar_w, 4.0, Color::new(0.15, 0.2, 0.25, 1.0));
-            draw_rectangle(cx - bar_w * 0.5, cy + radius - 5.0, bar_w * ratio, 4.0, bp.color);
+            draw_rectangle(cx - bar_w * 0.5, cy + radius - 5.0 * scale, bar_w, 4.0 * scale, Color::new(0.15, 0.2, 0.25, 1.0));
+            draw_rectangle(cx - bar_w * 0.5, cy + radius - 5.0 * scale, bar_w * ratio, 4.0 * scale, bp.color);
         }
     }
 
@@ -675,10 +676,10 @@ fn draw_map_viewport(app: &mut AppState, rect: Rect) {
         let by = center_px_y + (beast.y - app.camera_y) * ts;
         if bx >= rect.x && bx <= rect.x + rect.w && by >= rect.y && by <= rect.y + rect.h {
             draw_circle(bx, by, ts * 0.35, Color::new(0.8, 0.1, 0.1, 0.85));
-            draw_circle_lines(bx, by, ts * 0.38, 2.0, RED);
-            draw_text("wMw", bx - 12.0, by + 4.0, 15.0, WHITE);
+            draw_circle_lines(bx, by, ts * 0.38, 2.0 * scale, RED);
+            draw_text("wMw", bx - 12.0 * scale, by + 4.0 * scale, 15.0 * scale, WHITE);
             let hp_ratio = (beast.hp as f32 / beast.max_hp as f32).clamp(0.0, 1.0);
-            draw_rectangle(bx - 14.0, by - 18.0, 28.0 * hp_ratio, 4.0, RED);
+            draw_rectangle(bx - 14.0 * scale, by - 18.0 * scale, 28.0 * scale * hp_ratio, 4.0 * scale, RED);
         }
     }
 
@@ -686,11 +687,11 @@ fn draw_map_viewport(app: &mut AppState, rect: Rect) {
     for p in &app.world.projectiles {
         let px = center_px_x + (p.x - app.camera_x) * ts;
         let py = center_px_y + (p.y - app.camera_y) * ts;
-        draw_circle(px, py, 5.5, p.color);
-        draw_circle(px, py, 3.0, WHITE);
+        draw_circle(px, py, 5.5 * scale, p.color);
+        draw_circle(px, py, 3.0 * scale, WHITE);
     }
 
-    // 8. Interação de Toque / Mouse: Construção, Demolição, Rotas
+    // 8. Interação de Toque / Mouse
     if inside_map && app.active_tool != MouseTool::PanCamera {
         let h_px = center_px_x + (hovered_tx as f32 - app.camera_x) * ts - ts * 0.5;
         let h_py = center_px_y + (hovered_ty as f32 - app.camera_y) * ts - ts * 0.5;
@@ -699,10 +700,10 @@ fn draw_map_viewport(app: &mut AppState, rect: Rect) {
         let is_drag = is_mouse_button_down(MouseButton::Left);
 
         if app.active_tool == MouseTool::Demolish {
-            draw_rectangle_lines(h_px, h_py, ts, ts, 2.5, Color::new(1.0, 0.2, 0.2, 0.9));
+            draw_rectangle_lines(h_px, h_py, ts, ts, 2.5 * scale, Color::new(1.0, 0.2, 0.2, 0.9));
             draw_text("X", h_px + ts * 0.38, h_py + ts * 0.62, ts * 0.45, RED);
         } else {
-            draw_rectangle_lines(h_px, h_py, ts, ts, 2.0, Color::new(1.0, 1.0, 1.0, 0.65));
+            draw_rectangle_lines(h_px, h_py, ts, ts, 2.0 * scale, Color::new(1.0, 1.0, 1.0, 0.65));
         }
 
         match app.active_tool {
@@ -784,7 +785,7 @@ fn draw_map_viewport(app: &mut AppState, rect: Rect) {
         }
     }
 
-    // 9. Tooltip Informativo ao Passar Mouse
+    // 9. Tooltip Informativo
     if inside_map {
         if let Some(st) = app.world.structures.iter().find(|s| s.x == hovered_tx && s.y == hovered_ty) {
             if let Some(bp) = app.world.blueprints.registry.get(&st.category_id) {
@@ -795,21 +796,21 @@ fn draw_map_viewport(app: &mut AppState, rect: Rect) {
                     None => "Livre".to_string(),
                 };
 
-                let tip_w = 280.0_f32.min(rect.w - 16.0);
-                let tip_h = 86.0;
+                let tip_w = (280.0 * scale).min(rect.w - 16.0);
+                let tip_h = 86.0 * scale;
                 let tx_box = (mx + 12.0).min(rect.x + rect.w - tip_w - 6.0);
                 let ty_box = (my + 12.0).min(rect.y + rect.h - tip_h - 6.0);
 
                 let tip_border = if app.active_tool == MouseTool::Demolish { RED } else { bp.color };
                 draw_rectangle(tx_box, ty_box, tip_w, tip_h, Color::new(0.03, 0.05, 0.09, 0.96));
-                draw_rectangle_lines(tx_box, ty_box, tip_w, tip_h, 1.5, tip_border);
+                draw_rectangle_lines(tx_box, ty_box, tip_w, tip_h, 1.5 * scale, tip_border);
 
                 if app.active_tool == MouseTool::Demolish {
-                    draw_text(&format!("DEMOLIR #{} {}", st.id, bp.display_name), tx_box + 8.0, ty_box + 22.0, 15.0, RED);
-                    draw_text(&format!("+{} Bytes, +{} Shards", bp.cost_bytes, bp.cost_shards), tx_box + 8.0, ty_box + 44.0, 13.0, WHITE);
+                    draw_text(&format!("DEMOLIR #{} {}", st.id, bp.display_name), tx_box + 8.0 * scale, ty_box + 22.0 * scale, 14.5 * scale, RED);
+                    draw_text(&format!("+{} Bytes, +{} Shards", bp.cost_bytes, bp.cost_shards), tx_box + 8.0 * scale, ty_box + 44.0 * scale, 12.5 * scale, WHITE);
                 } else {
-                    draw_text(&format!("#{} {}", st.id, bp.display_name), tx_box + 8.0, ty_box + 20.0, 15.0, bp.color);
-                    draw_text(&format!("Carga: {}/{} | Status: {}", inv_total, cap, lock_txt), tx_box + 8.0, ty_box + 40.0, 13.0, WHITE);
+                    draw_text(&format!("#{} {}", st.id, bp.display_name), tx_box + 8.0 * scale, ty_box + 20.0 * scale, 14.5 * scale, bp.color);
+                    draw_text(&format!("Carga: {}/{} | Status: {}", inv_total, cap, lock_txt), tx_box + 8.0 * scale, ty_box + 40.0 * scale, 12.5 * scale, WHITE);
                 }
             }
         }
@@ -819,59 +820,56 @@ fn draw_map_viewport(app: &mut AppState, rect: Rect) {
 // =========================================================================
 // PAINEL LATERAL DIREITO (LANDSCAPE)
 // =========================================================================
-fn draw_right_education_panel(app: &mut AppState, rect: Rect) {
-    let top_h = rect.h * 0.62;
-    let bot_h = rect.h - top_h - 8.0;
+fn draw_right_education_panel(app: &mut AppState, rect: Rect, scale: f32) {
+    let top_h = (rect.h * 0.67).round();
+    let bot_h = rect.h - top_h - 8.0 * scale;
 
     let edu_rect = Rect::new(rect.x, rect.y, rect.w, top_h);
-    let db_rect = Rect::new(rect.x, rect.y + top_h + 8.0, rect.w, bot_h);
+    let db_rect = Rect::new(rect.x, rect.y + top_h + 8.0 * scale, rect.w, bot_h);
 
-    draw_panel_box(edu_rect, " ACADEMIA RUST (EXPLICAÇÃO PASSO A PASSO) ", Color::new(0.0, 0.9, 0.7, 1.0));
+    draw_panel_box(edu_rect, " ACADEMIA RUST (EXPLICAÇÃO PASSO A PASSO) ", Color::new(0.0, 0.9, 0.7, 1.0), 12.0 * scale);
 
     let step = &TUTORIAL_STEPS[app.tutorial_idx % TUTORIAL_STEPS.len()];
-    let mut y = edu_rect.y + 28.0;
+    let mut y = edu_rect.y + 24.0 * scale;
 
-    // Título da Lição + Botão Próxima Lição
-    draw_text(step.title, edu_rect.x + 12.0, y, 17.0, Color::new(0.2, 0.95, 1.0, 1.0));
-    let next_btn = Rect::new(edu_rect.x + edu_rect.w - 130.0, edu_rect.y + 8.0, 120.0, 26.0);
-    if draw_button(next_btn, "Próxima ▶", Color::new(0.2, 0.85, 1.0, 1.0), false) {
+    draw_text(step.title, edu_rect.x + 12.0 * scale, y, 15.0 * scale, Color::new(0.2, 0.95, 1.0, 1.0));
+    let next_btn = Rect::new(edu_rect.x + edu_rect.w - 110.0 * scale, edu_rect.y + 6.0 * scale, 102.0 * scale, 22.0 * scale);
+    if draw_button(next_btn, "Próxima ▶", Color::new(0.2, 0.85, 1.0, 1.0), false, 11.0 * scale) {
         app.tutorial_idx = (app.tutorial_idx + 1) % TUTORIAL_STEPS.len();
     }
-    y += 24.0;
+    y += 20.0 * scale;
 
-    // 1. O que é no Rust real?
-    draw_text("• O QUE É NO RUST REAL?", edu_rect.x + 12.0, y, 14.0, Color::new(1.0, 0.85, 0.2, 1.0));
-    y += 18.0;
-    y = draw_wrapped_text(step.real_rust_meaning, edu_rect.x + 14.0, y, edu_rect.w - 28.0, 14.0, WHITE);
-    y += 8.0;
+    draw_text("• O QUE É NO RUST REAL?", edu_rect.x + 12.0 * scale, y, 12.5 * scale, Color::new(1.0, 0.85, 0.2, 1.0));
+    y += 15.0 * scale;
+    y = draw_wrapped_text(step.real_rust_meaning, edu_rect.x + 14.0 * scale, y, edu_rect.w - 28.0 * scale, 11.5 * scale, WHITE);
+    y += 6.0 * scale;
 
-    // 2. Para que serve no jogo?
-    draw_text("• O QUE FAZ NA SUA FÁBRICA?", edu_rect.x + 12.0, y, 14.0, Color::new(0.3, 1.0, 0.5, 1.0));
-    y += 18.0;
-    y = draw_wrapped_text(step.game_effect, edu_rect.x + 14.0, y, edu_rect.w - 28.0, 14.0, LIGHTGRAY);
-    y += 8.0;
+    draw_text("• O QUE FAZ NA SUA FÁBRICA?", edu_rect.x + 12.0 * scale, y, 12.5 * scale, Color::new(0.3, 1.0, 0.5, 1.0));
+    y += 15.0 * scale;
+    y = draw_wrapped_text(step.game_effect, edu_rect.x + 14.0 * scale, y, edu_rect.w - 28.0 * scale, 11.5 * scale, LIGHTGRAY);
+    y += 6.0 * scale;
 
-    // 3. Dissecação do comando
-    draw_text("• ENTENDENDO CADA PALAVRA DO COMANDO:", edu_rect.x + 12.0, y, 14.0, Color::new(0.85, 0.45, 1.0, 1.0));
-    y += 18.0;
+    let exec_rect = Rect::new(edu_rect.x + 12.0 * scale, edu_rect.y + edu_rect.h - 34.0 * scale, edu_rect.w - 24.0 * scale, 26.0 * scale);
+
+    draw_text("• ENTENDENDO CADA PALAVRA DO COMANDO:", edu_rect.x + 12.0 * scale, y, 12.5 * scale, Color::new(0.85, 0.45, 1.0, 1.0));
+    y += 15.0 * scale;
     for line in step.token_breakdown {
-        draw_text(line, edu_rect.x + 14.0, y, 13.0, Color::new(0.8, 0.9, 1.0, 1.0));
-        y += 16.0;
+        if y + 14.0 * scale < exec_rect.y - 4.0 * scale {
+            draw_text(line, edu_rect.x + 14.0 * scale, y, 11.5 * scale, Color::new(0.8, 0.9, 1.0, 1.0));
+            y += 14.0 * scale;
+        }
     }
 
-    // Botão Executar Exemplo
-    let exec_rect = Rect::new(edu_rect.x + 12.0, edu_rect.y + edu_rect.h - 38.0, edu_rect.w - 24.0, 30.0);
     let btn_label = format!("▶ Executar Agora: {}", step.example_cmd);
-    if draw_button(exec_rect, &btn_label, Color::new(0.2, 1.0, 0.5, 1.0), false) {
+    if draw_button(exec_rect, &btn_label, Color::new(0.2, 1.0, 0.5, 1.0), false, 12.0 * scale) {
         match execute_rust_command(&mut app.world, step.example_cmd) {
             Ok(msg) => app.console_log = msg,
             Err(err) => app.console_log = err,
         }
     }
 
-    // Painel de Status das Unidades
-    draw_panel_box(db_rect, " ESTRUTURAS ATIVAS & BORROW CHECKER ", Color::new(0.7, 0.4, 1.0, 1.0));
-    let mut dy = db_rect.y + 26.0;
+    draw_panel_box(db_rect, " ESTRUTURAS ATIVAS & BORROW CHECKER ", Color::new(0.7, 0.4, 1.0, 1.0), 12.5 * scale);
+    let mut dy = db_rect.y + 24.0 * scale;
 
     for st in app.world.structures.iter().take(8) {
         let inv: u32 = st.inventory.values().sum();
@@ -900,62 +898,63 @@ fn draw_right_education_panel(app: &mut AppState, rect: Rect) {
 
         draw_text(
             &format!("#{:<2} {:<14} | Carga: {:<2} | {}", st.id, st.category_id, inv, status),
-            db_rect.x + 10.0,
+            db_rect.x + 10.0 * scale,
             dy,
-            14.0,
+            13.0 * scale,
             col,
         );
-        dy += 18.0;
+        dy += 17.0 * scale;
     }
 }
 
 // =========================================================================
 // TERMINAL INFERIOR (LANDSCAPE)
 // =========================================================================
-fn draw_bottom_terminal(app: &mut AppState, rect: Rect) {
+fn draw_bottom_terminal(app: &mut AppState, rect: Rect, scale: f32) {
     draw_panel_box(
         rect,
         " TERMINAL RUST SIMULADO // EVENTOS & LOGS ",
         Color::new(0.2, 1.0, 0.5, 1.0),
+        12.5 * scale,
     );
 
     draw_text(
         &format!("borrow_checker> {}", app.world.last_borrow_event),
-        rect.x + 12.0,
-        rect.y + 26.0,
-        15.0,
+        rect.x + 12.0 * scale,
+        rect.y + 24.0 * scale,
+        14.0 * scale,
         Color::new(0.4, 0.9, 1.0, 1.0),
     );
 
     draw_text(
         &format!("rust_console  > {}█", app.command_input),
-        rect.x + 12.0,
-        rect.y + 48.0,
-        17.0,
+        rect.x + 12.0 * scale,
+        rect.y + 44.0 * scale,
+        16.0 * scale,
         Color::new(0.3, 1.0, 0.4, 1.0),
     );
 
     draw_text(
         &format!("output        : {}", app.console_log),
-        rect.x + 12.0,
-        rect.y + 70.0,
-        15.0,
+        rect.x + 12.0 * scale,
+        rect.y + 64.0 * scale,
+        14.0 * scale,
         Color::new(1.0, 0.85, 0.2, 1.0),
     );
 }
 
 // =========================================================================
-// WIDGETS AUXILIARES
+// WIDGETS AUXILIARES COM ESCALA
 // =========================================================================
-fn draw_panel_box(rect: Rect, title: &str, border_color: Color) {
+fn draw_panel_box(rect: Rect, title: &str, border_color: Color, title_size: f32) {
     draw_rectangle(rect.x, rect.y, rect.w, rect.h, Color::new(0.05, 0.07, 0.11, 0.96));
     draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 1.5, border_color);
     if !title.is_empty() {
-        draw_text(title, rect.x + 8.0, rect.y + 14.0, 14.0, border_color);
+        draw_text(title, rect.x + 8.0, rect.y + title_size + 2.0, title_size, border_color);
     }
 }
 
-fn draw_button(rect: Rect, text: &str, color: Color, active: bool) -> bool {
+fn draw_button(rect: Rect, text: &str, color: Color, active: bool, font_size: f32) -> bool {
     let (mx, my) = mouse_position();
     let hovered = rect.contains(vec2(mx, my));
     let clicked = hovered && is_mouse_button_pressed(MouseButton::Left);
@@ -971,7 +970,6 @@ fn draw_button(rect: Rect, text: &str, color: Color, active: bool) -> bool {
     draw_rectangle(rect.x, rect.y, rect.w, rect.h, bg);
     draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, if active { 2.0 } else { 1.2 }, color);
 
-    let font_size = 13.5;
     let dims = measure_text(text, None, font_size as u16, 1.0);
     let tx = rect.x + (rect.w - dims.width) * 0.5;
     let ty = rect.y + (rect.h + dims.height * 0.6) * 0.5;
