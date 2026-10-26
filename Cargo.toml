@@ -7,8 +7,12 @@ edition = "2021"
 macroquad = "0.4"
 
 [package.metadata.android]
+package_name = "com.sapyst.structforge"
+label = "STRUCT::FORGE"
+icon = "@mipmap/ic_launcher"
+res = "res"
 android_version = 35
-target_sdk_version = 35
+target_sdk_version = 34
 min_sdk_version = 24
 build_targets = ["aarch64-linux-android"]
 
