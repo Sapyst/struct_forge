@@ -1,0 +1,4 @@
+/target
+Cargo.lock.orig
+*.apk.idsig
+.DS_Store
